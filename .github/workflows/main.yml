@@ -1,0 +1,53 @@
+name: vprofile actions
+on: workflow_dispatch
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: vprofileapp
+  EKS_CLUSTER: vprofile-eks
+
+jobs:
+  Testing:
+    runs-on: ubuntu-latest            # the runner we want to use
+    steps:
+      - name: Code checkout           # Fetch the source code
+        uses: actions/checkout@v4     # use the checkout action
+
+      - name: Maven test              # unit test
+        uses: mvn test
+
+      - name: Checkstyle
+        uses: mvn checkstyle:checkstyle
+
+      # Setup java 11 to be default (sonar-scanner requirement as of 5.x)
+      - name: Set Java 11
+        uses: actions/setup-java@v3   # use action from marketplace
+        with:
+          distribution: 'temurin'     # See 'Supported distributions' for available options
+          java-version: '11'
+
+      # Setup sonar-scanner CLI
+      - name: Setup SonarQube
+        uses: warchant/setup-sonar-scanner@v7   # use action from marketplace
+
+      # Run sonar-scanner command to scan and upload all the result to SonarCloud
+      - name: SonarQube Scan
+        run: sonar-scanner
+           -Dsonar.host.url=${{ secrets.SONAR_URL }}                                            # pass the url we stored in Secrets
+           -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+           -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+           -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+           -Dsonar.sources=src/                                                                 # it will scan src/ folder
+           -Dsonar.junit.reportsPath=target/surefire-reports/ 
+           -Dsonar.jacoco.reportsPath=target/jacoco.exec 
+           -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml
+           -Dsonar.java.binaries=target/test-classes/com/visualpathit/account/controllerTest/
+
+      # Check the Quality Gate status.
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarsource/sonarqube-quality-gate-action@master                                  # use action from marketplace to check sonarqube quality gate
+        # Force to fail step after specific time.
+        timeout-minutes: 5
+        env:                                                                                    # pass the environment vars
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}                                               # pass the authen token to SONAR_TOKEN var name
+          SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
